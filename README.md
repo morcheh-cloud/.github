@@ -52,7 +52,7 @@ them into `compose.yml`.
 
 | Setting | Meaning |
 |---|---|
-| `MORCHE_VERSION` | Image tag: `latest`, a release (`0.1.0`), or `edge` (main branch) |
+| `MORCHE_VERSION` | Image tag: `latest` (newest build of main) or a release like `0.1.0` |
 | `PANEL_URL` | Where people open the panel. Also used for links in alerts |
 | `API_URL` | Where people's browsers reach the backend. Applied when the panel container starts |
 | `PANEL_PORT`, `BACKEND_PORT` | Ports on this machine |
@@ -345,7 +345,8 @@ docker compose pull
 docker compose up -d
 ```
 
-Database migrations run by themselves when the backend starts. Pin
+Database migrations run by themselves when the backend starts. `latest` follows
+the main branch; pin
 `MORCHE_VERSION` to a release if you want to choose when to move.
 
 ## Back up
