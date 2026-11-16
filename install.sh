@@ -140,6 +140,7 @@ secret_b64() {
 }
 
 # --------------------------------------------------------------------- start --
+umask 077 # .env holds secrets: create it (and the folder) private from the start
 banner
 
 step "Checking requirements"
@@ -201,8 +202,8 @@ else
     -e "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(secret_hex)|" \
     -e "s|^SECRETS_KEY=.*|SECRETS_KEY=$(secret_b64)|" \
     -e "s|^SETUP_TOKEN=.*|SETUP_TOKEN=$(secret_hex)|" \
-    .env.example >.env
-  chmod 600 .env
+    .env.example >.env.tmp
+  mv .env.tmp .env
   ok "Wrote .env with fresh secrets"
 fi
 
@@ -210,6 +211,11 @@ env_get() { sed -n "s/^$1=//p" .env | tail -n 1; }
 panel=$(env_get PANEL_URL)
 api=$(env_get API_URL)
 token=$(env_get SETUP_TOKEN)
+if [ -z "$token" ] && grep -q '^SETUP_TOKEN=' .env; then
+  token=$(secret_hex)
+  sed "s|^SETUP_TOKEN=.*|SETUP_TOKEN=$token|" .env >.env.tmp && mv .env.tmp .env
+  ok "Added a setup token to .env, so nobody else can claim the panel first"
+fi
 version=$(env_get MORCHE_VERSION)
 panel_port=$(env_get PANEL_PORT); panel_port=${panel_port:-3200}
 backend_port=$(env_get BACKEND_PORT); backend_port=${backend_port:-8080}
@@ -251,6 +257,13 @@ say "    ${CYA}1${R}  Open ${B}$panel${R}"
 say "    ${CYA}2${R}  Create the first admin account"
 [ -n "$token" ] && say "    ${CYA}3${R}  Paste the setup token above when the form asks for it"
 say ""
+case $panel in
+  http://localhost:*|http://127.0.0.1:*) ;;
+  http://*)
+    say "  ${YEL}!${R} The panel is served over ${B}plain http${R}: passwords and SSH keys cross the"
+    say "    network unencrypted. Put HTTPS in front before real use (README › HTTPS)."
+    say "" ;;
+esac
 say "  ${YEL}!${R} Keep a copy of ${B}SECRETS_KEY${R} from ${B}$where/.env${R}: every saved password"
 say "    and key is sealed with it."
 say ""
