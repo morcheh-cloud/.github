@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/banner.svg" alt="Morche: your servers, one panel" width="100%">
+<img src="https://raw.githubusercontent.com/morcheh-cloud/.github/main/.github/assets/banner.svg" alt="Morche: your servers, one panel" width="100%">
 
 <br>
 
