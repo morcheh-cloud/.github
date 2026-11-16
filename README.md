@@ -31,7 +31,7 @@
 Try Morche on your own machine with one command. All you need is Docker.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/morche/main/install.sh | sh -s -- --quick-start
+curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/.github/main/install.sh | sh -s -- --quick-start
 ```
 
 That's it. The installer checks Docker, writes `~/morche/.env` with fresh
@@ -110,7 +110,7 @@ monitors, alerts and log archives.
 On the machine that will run Morche:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/morche/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/.github/main/install.sh | sh
 ```
 
 The installer asks for the address people will use to reach this machine (IP
@@ -133,7 +133,7 @@ Environment variables it reads: `MORCHE_HOST` (skip the question),
 `PANEL_PORT`, `BACKEND_PORT`, `MORCHE_VERSION`, `MORCHE_DIR`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/morche/main/install.sh | MORCHE_HOST=panel.example.com sh
+curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/.github/main/install.sh | MORCHE_HOST=panel.example.com sh
 ```
 
 Running it again is safe: an existing `.env` is kept as it is.
@@ -146,7 +146,7 @@ Running it again is safe: an existing `.env` is kept as it is.
 <br>
 
 ```bash
-git clone https://github.com/morcheh-cloud/morche.git
+git clone https://github.com/morcheh-cloud/.github.git morche
 cd morche
 ./install.sh            # or ./install.sh --quick-start
 ```

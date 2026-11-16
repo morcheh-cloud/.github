@@ -2,8 +2,8 @@
 # Morche installer: writes .env with fresh secrets, starts the stack and waits
 # until the panel answers. Safe to run again: an existing .env is kept.
 #
-#   curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/morche/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/morche/main/install.sh | sh -s -- --quick-start
+#   curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/.github/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/morcheh-cloud/.github/main/install.sh | sh -s -- --quick-start
 #
 #   ./install.sh                                 # from a clone; asks for the address
 #   ./install.sh --quick-start                   # try it on this machine (localhost)
@@ -13,7 +13,7 @@
 # $MORCHE_DIR (default: ~/morche).
 set -eu
 
-REPO_RAW=${MORCHE_RAW_URL:-https://raw.githubusercontent.com/morcheh-cloud/morche/${MORCHE_REF:-main}}
+REPO_RAW=${MORCHE_RAW_URL:-https://raw.githubusercontent.com/morcheh-cloud/.github/${MORCHE_REF:-main}}
 
 # ---------------------------------------------------------------- arguments --
 quick=0
