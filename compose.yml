@@ -1,10 +1,12 @@
 # Morche, self-hosted: Postgres, Redis, the backend and the panel.
 #
-#   ./install.sh                 # first time: writes .env, starts everything
-#   docker compose pull && docker compose up -d   # update
+#   ./install.sh                                    # first time: writes .env, starts everything
+#   docker compose pull && docker compose up -d     # update
 #   docker compose exec backend server reset-admin  # locked out of every admin
 #
-# Settings live in .env next to this file (see .env.example).
+# Values in ${...} come from .env next to this file (see .env.example).
+# Lines starting with "# " under environment are optional: they show the
+# default; uncomment one to change it. Every variable is explained in README.md.
 name: morche
 
 x-restart: &restart
@@ -50,17 +52,38 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     environment:
+      # --- Required ---
       DATABASE_URL: postgres://morche:${POSTGRES_PASSWORD}@postgres:5432/morche?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env (openssl rand -base64 32)}
-      SETUP_TOKEN: ${SETUP_TOKEN:-}
       PANEL_URL: ${PANEL_URL:?set PANEL_URL in .env}
       CORS_ALLOWED_ORIGINS: ${PANEL_URL}
       COOKIE_INSECURE: ${COOKIE_INSECURE:-false}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
-      ANSIBLE_SANDBOX: ${ANSIBLE_SANDBOX:-auto}
-      TZ: ${TZ:-UTC}
       LOG_ARCHIVE_DIR: /home/morche/log-archives
+
+      # --- Recommended ---
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      TZ: ${TZ:-UTC}
+
+      # --- Optional (defaults shown) ---
+      # ANSIBLE_SANDBOX: auto
+      # ANSIBLE_RUN_TIMEOUT: 2h
+      # ANSIBLE_PLAYBOOK: ansible-playbook
+      # TERMINAL_DETACHED_TIMEOUT: 15m
+      # SERVER_CHECK_INTERVAL: 15s
+      # SERVER_SAMPLE_INTERVAL: 1m
+      # SERVER_HISTORY: 744h
+      # STORAGE_CHECK_INTERVAL: 30s
+      # STORAGE_SCAN_INTERVAL: 24h
+      # STORAGE_HISTORY: 744h
+      # DNS_CHECK_INTERVAL: 30s
+      # PVE_CHECK_INTERVAL: 30s
+      # CLOUD_CHECK_INTERVAL: 5m
+      # PROXY_CHECK_INTERVAL: 60s
+      # SOFTWARE_CHECK_INTERVAL: 6h
+      # MONITOR_HISTORY: 336h
+      # SCHEDULE_TICK: 15s
     volumes:
       # Log archives kept on Morche's own machine (Settings › Logs & archives).
       - logarchives:/home/morche/log-archives
@@ -81,6 +104,7 @@ services:
     image: ghcr.io/morcheh-cloud/frontend:${MORCHE_VERSION:-latest}
     depends_on: [backend]
     environment:
+      # --- Required ---
       # Where people's browsers reach the backend (written into the panel
       # when the container starts).
       API_URL: ${API_URL:?set API_URL in .env}
