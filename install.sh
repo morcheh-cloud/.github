@@ -169,6 +169,15 @@ ok "Working in $where"
 panel_port=${PANEL_PORT:-3200}
 backend_port=${BACKEND_PORT:-8080}
 
+# Compose groups containers and volumes by project name. Anything else already
+# under a name (another Morche, a dev checkout) must not be touched: its
+# orphans would be removed and its Postgres volume, made with another
+# password, reused.
+project_taken() { # project_taken NAME
+  [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$1")" ] ||
+    [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=$1")" ]
+}
+
 if [ -f .env ]; then
   info ".env already exists: keeping it as it is"
   [ "$quick" = 1 ] && warn "--quick-start settings are not applied over an existing .env"
@@ -203,8 +212,13 @@ else
     -e "s|^SECRETS_KEY=.*|SECRETS_KEY=$(secret_b64)|" \
     -e "s|^SETUP_TOKEN=.*|SETUP_TOKEN=$(secret_hex)|" \
     .env.example >.env.tmp
+  # Fresh secrets need fresh volumes: take the first project name nothing uses.
+  project=morche n=1
+  while project_taken "$project"; do n=$((n + 1)); project=morche-$n; done
+  printf '\n# Compose project: names the containers and volumes.\nCOMPOSE_PROJECT_NAME=%s\n' "$project" >>.env.tmp
   mv .env.tmp .env
   ok "Wrote .env with fresh secrets"
+  [ "$project" != morche ] && info "\"morche\" is already used on this machine: running as \"$project\""
 fi
 
 env_get() { sed -n "s/^$1=//p" .env | tail -n 1; }
@@ -225,7 +239,17 @@ docker compose pull
 ok "Images are up to date"
 
 step "Starting Morche"
-docker compose up -d --remove-orphans
+project=$(env_get COMPOSE_PROJECT_NAME); project=${project:-morche}
+# Clean up services an older compose.yml had, but only when every container
+# of the project lives here; otherwise they belong to someone else.
+foreign=$(docker ps -a --filter "label=com.docker.compose.project=$project" \
+  --format '{{.Label "com.docker.compose.project.working_dir"}}' | grep -vxF "$PWD" || true)
+if [ -z "$foreign" ]; then
+  docker compose up -d --remove-orphans
+else
+  warn "Other containers share the project name \"$project\": leaving them alone"
+  docker compose up -d
+fi
 ok "Containers started"
 
 step "Waiting for Morche to answer"
@@ -235,6 +259,11 @@ if spin_wait "Backend starting (migrations run on first start)" 180 http_up "htt
 else
   ready=0
   warn "Backend didn't answer within 3 minutes: docker compose logs -f backend"
+  if docker compose logs backend 2>&1 | grep -q 'password authentication failed'; then
+    warn "Postgres refuses the password in .env: its volume ${project}_pgdata was made"
+    warn "with another one (another stack named \"$project\"?). Fix: docker compose down,"
+    warn "then remove .env and run this again: it picks a name of its own."
+  fi
 fi
 if spin_wait "Panel starting" 90 http_up "http://127.0.0.1:$panel_port/"; then
   ok "Panel is up"
