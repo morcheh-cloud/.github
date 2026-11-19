@@ -5,6 +5,16 @@ set -euo pipefail
 : "${PGPASSWORD:?}" "${LAB_PASSWORD:?}"
 export PGHOST=postgres PGUSER=morche
 BACKEND=${BACKEND_CONTAINER:-morche-demo-backend}
+
+# Sysbox gives the lab systemd and Docker with visitors kept off the host's
+# root. Without it the lab runs under plain runc: its own small supervisor,
+# no systemd units, no Docker.
+LAB_RUNTIME=${LAB_RUNTIME:-sysbox-runc}
+if ! docker info --format '{{json .Runtimes}}' | grep -q "\"$LAB_RUNTIME\""; then
+  printf '%s %s\n' "$(date -u +%H:%M:%S)" "runtime $LAB_RUNTIME isn't installed: the lab runs under runc, without systemd or Docker"
+  LAB_RUNTIME=runc
+fi
+export LAB_RUNTIME
 API=${API:-http://backend:8080}
 JAR=/tmp/admin.cookies
 

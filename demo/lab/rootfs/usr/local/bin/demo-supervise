@@ -1,0 +1,16 @@
+#!/bin/bash
+# Without systemd: keeps the lab server's services running, restarting any
+# that stops. No Docker here (it needs Sysbox).
+mkdir -p /run/sshd /var/log/nginx
+keep() { # name command…
+  local name=$1; shift
+  ( while true; do "$@" >>"/var/log/demo-$name.log" 2>&1; sleep 2; done ) &
+}
+keep sshd /usr/sbin/sshd -D -e
+keep nginx /usr/sbin/nginx -g 'daemon off;'
+keep cron /usr/sbin/cron -f
+keep shop-api setpriv --reuid=www-data --regid=www-data --init-groups /usr/local/bin/demo-shop
+keep load nice -n 19 /usr/local/bin/demo-load
+trap 'kill 0; exit 0' TERM INT
+# PID 1 reaps orphans; wait returns whenever a child ends.
+while true; do wait -n 2>/dev/null || sleep 1; done

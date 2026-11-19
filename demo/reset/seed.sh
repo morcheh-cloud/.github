@@ -58,10 +58,10 @@ database "Sessions cache" redis lab-redis 6379 "" "$LAB_PASSWORD" ""
 
 log "seed: storage"
 st=$(api POST /storages "$(j --arg pw "$LAB_PASSWORD" \
-  '{name:"Backups (MinIO)", protocol:"s3", provider:"minio", host:"lab-minio",
+  '{name:"Backups (RustFS)", protocol:"s3", host:"lab-s3",
     port:9000, tls:"none", path_style:true, region:"us-east-1",
     username:"morche", secret:$pw}')" | id)
-# MinIO may still be starting: try for a minute.
+# The S3 server may still be starting: try for a minute.
 for b in backups media; do
   for _ in $(seq 1 12); do
     api POST "/storages/$st/buckets" "$(j --arg b "$b" '{name:$b}')" >/dev/null 2>&1 && break

@@ -1,7 +1,12 @@
 #!/bin/sh
-# Sets the demo login's password, names the machine, then hands over to systemd.
+# Sets the demo login's password, names the machine, then starts the
+# services: under systemd when the runtime allows it (Sysbox), else with a
+# small supervisor (plain runc, where the cgroup tree is read-only).
 set -e
 echo "ant:${LAB_PASSWORD:?LAB_PASSWORD is required}" | chpasswd
-[ -n "$LAB_HOSTNAME" ] && echo "$LAB_HOSTNAME" > /etc/hostname
+if [ -n "$LAB_HOSTNAME" ]; then echo "$LAB_HOSTNAME" > /etc/hostname; fi
 echo "LAB_ROLE=${LAB_ROLE:-web}" > /etc/default/demo
-exec /sbin/init
+if [ -w /sys/fs/cgroup ]; then
+  exec /sbin/init
+fi
+exec /usr/local/bin/demo-supervise

@@ -19,7 +19,7 @@ address signs the visitor in at once.
 | `lab-web-1`, `lab-web-2` (`ghcr.io/morcheh-cloud/demo-lab`) | Debian servers: SSH, systemd, nginx, a small `shop-api` service, fail2ban, ufw |
 | `lab-docker-1` | Debian with Docker and a compose project (`shop`), images baked in |
 | `lab-postgres`, `lab-mariadb`, `lab-redis` | Databases for the Databases section |
-| `lab-minio` | S3 storage for Storage and backups |
+| `lab-s3` | S3 storage (RustFS) for Storage and backups |
 
 ## How visitors are kept in the sandbox
 

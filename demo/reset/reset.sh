@@ -59,6 +59,6 @@ rm -f /tmp/history.sql
 redis-cli -h redis -a "$REDIS_PASSWORD" --no-auth-warning FLUSHALL >/dev/null
 
 log "reset: rebuilding lab servers"
-lab up -d --force-recreate --remove-orphans
+lab up -d --force-recreate --remove-orphans || log "lab didn't fully start"
 backend_start
 log "reset done"
