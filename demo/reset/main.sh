@@ -5,6 +5,10 @@ source "$(dirname "$0")/lib.sh"
 
 STEP=$(( ${DEMO_RESET_MINUTES:-60} * 60 ))
 
+# Don't hammer the backend (its sign-in limits count every try) when
+# something fails: wait a minute before the container restarts.
+trap 'log "failed; trying again in a minute"; sleep 60' ERR
+
 log "lab: starting"
 lab up -d --remove-orphans || log "lab didn't fully start; seeding anyway"
 
@@ -18,6 +22,7 @@ if [ "$(psql_q -d postgres -c "SELECT 1 FROM pg_database WHERE datname='morche_g
     backend_stop
     psql_q -d postgres -c "DROP DATABASE morche WITH (FORCE)"
     psql_q -d postgres -c "CREATE DATABASE morche"
+    redis-cli -h redis -a "$REDIS_PASSWORD" --no-auth-warning FLUSHALL >/dev/null
     backend_start
     sleep 3
     wait_backend
