@@ -1,0 +1,10 @@
+# The panel and its API on two names, as Morche expects.
+{$DEMO_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:3200
+}
+
+{$DEMO_API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy backend:8080
+}

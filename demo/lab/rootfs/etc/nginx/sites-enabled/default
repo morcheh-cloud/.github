@@ -1,0 +1,6 @@
+server {
+    listen 80 default_server;
+    root /var/www/shop;
+    index index.html;
+    location /api/ { proxy_pass http://127.0.0.1:3000/; }
+}

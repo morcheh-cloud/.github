@@ -1,0 +1,10 @@
+[Unit]
+Description=Demo: background load for the charts
+
+[Service]
+ExecStart=/usr/local/bin/demo-load
+Nice=19
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

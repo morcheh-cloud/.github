@@ -1,0 +1,11 @@
+[Unit]
+Description=Shop API
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/demo-shop
+User=www-data
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

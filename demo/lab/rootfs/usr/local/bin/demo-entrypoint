@@ -1,0 +1,7 @@
+#!/bin/sh
+# Sets the demo login's password, names the machine, then hands over to systemd.
+set -e
+echo "ant:${LAB_PASSWORD:?LAB_PASSWORD is required}" | chpasswd
+[ -n "$LAB_HOSTNAME" ] && echo "$LAB_HOSTNAME" > /etc/hostname
+echo "LAB_ROLE=${LAB_ROLE:-web}" > /etc/default/demo
+exec /sbin/init

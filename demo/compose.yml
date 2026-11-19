@@ -1,0 +1,194 @@
+# Morche's public demo: the panel, open to anyone through one "Enter the live
+# demo" button, with throwaway lab servers to try it on. Everything goes back
+# to the seeded state every DEMO_RESET_MINUTES. See README.md.
+#
+#   cp .env.example .env    # fill it in
+#   docker compose up -d --build
+#
+# Networks keep visitors in the sandbox:
+#   edge  — Caddy only; the one network with a way out (for certificates).
+#   core  — panel, backend, Postgres, Redis, the reset job. No way out.
+#   lab   — the backend and the lab servers. No way out, and no route to core,
+#           so a root shell on a lab server can't reach the database.
+name: morche-demo
+
+x-restart: &restart
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+# What a lab server may use. Visitors are root in them (under Sysbox, which
+# maps that root to an unprivileged user on the host).
+x-lab: &lab
+  <<: *restart
+  build: ./lab
+  image: morche-demo-lab
+  runtime: ${LAB_RUNTIME:-sysbox-runc}
+  networks: [lab]
+  mem_limit: 768m
+  cpus: 1
+  pids_limit: 512
+  environment: &labenv
+    LAB_PASSWORD: ${LAB_PASSWORD:?set LAB_PASSWORD in .env}
+
+services:
+  caddy:
+    <<: *restart
+    image: caddy:2.10-alpine
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env}
+      DEMO_API_DOMAIN: ${DEMO_API_DOMAIN:?set DEMO_API_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    ports: ["80:80", "443:443", "443:443/udp"]
+    networks: [edge, core]
+
+  postgres:
+    <<: *restart
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: morche
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: morche
+    volumes: [pgdata:/var/lib/postgresql]
+    networks: [core]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morche -d morche"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    <<: *restart
+    image: redis:8-alpine
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    networks: [core]
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    <<: *restart
+    image: ghcr.io/morcheh-cloud/backend:${MORCHE_VERSION:-latest}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgres://morche:${POSTGRES_PASSWORD}@postgres:5432/morche?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env}
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env}
+      PANEL_URL: https://${DEMO_DOMAIN}
+      CORS_ALLOWED_ORIGINS: https://${DEMO_DOMAIN}
+      TRUST_PROXY: "true"
+      DEMO_MODE: "true"
+      DEMO_USER: demo
+      DEMO_RESET_INTERVAL: ${DEMO_RESET_MINUTES:-60}m
+      # Playbooks run on this machine: never without the sandbox (and the
+      # demo account can't start one anyway).
+      ANSIBLE_SANDBOX: bwrap
+      SERVER_SAMPLE_INTERVAL: 30s
+      SOFTWARE_CHECK_INTERVAL: 1h
+      TZ: UTC
+    networks: [core, lab]
+
+  frontend:
+    <<: *restart
+    image: ghcr.io/morcheh-cloud/frontend:${MORCHE_VERSION:-latest}
+    depends_on: [backend]
+    environment:
+      API_URL: https://${DEMO_API_DOMAIN}
+    networks: [core]
+
+  # Seeds the demo on its first start, then resets it on the clock. It drives
+  # Docker to stop the backend and rebuild the lab, so it holds the socket:
+  # it sits on core only, out of the lab's reach.
+  reset:
+    <<: *restart
+    build: ./reset
+    depends_on: [backend]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      SETUP_TOKEN: ${SETUP_TOKEN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      LAB_PASSWORD: ${LAB_PASSWORD}
+      DEMO_RESET_MINUTES: ${DEMO_RESET_MINUTES:-60}
+      COMPOSE_PROJECT_NAME: morche-demo
+      DEMO_DIR: ${PWD}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The same path as on the host, so compose finds this file and .env.
+      - ${PWD}:${PWD}:ro
+    networks: [core]
+
+  # --- The lab: what visitors manage ---
+
+  lab-web-1:
+    <<: *lab
+    hostname: web-1
+    environment: { <<: *labenv, LAB_ROLE: web }
+
+  lab-web-2:
+    <<: *lab
+    hostname: web-2
+    environment: { <<: *labenv, LAB_ROLE: web }
+
+  lab-docker-1:
+    <<: *lab
+    hostname: docker-1
+    mem_limit: 1536m
+    environment: { <<: *labenv, LAB_ROLE: docker }
+
+  lab-postgres:
+    <<: *restart
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: ${LAB_PASSWORD}
+      POSTGRES_DB: shop
+    networks: [lab]
+    mem_limit: 256m
+
+  lab-mariadb:
+    <<: *restart
+    image: mariadb:11.8
+    environment:
+      MARIADB_ROOT_PASSWORD: ${LAB_PASSWORD}
+      MARIADB_DATABASE: blog
+    networks: [lab]
+    mem_limit: 384m
+
+  lab-redis:
+    <<: *restart
+    image: redis:8-alpine
+    command: ["sh", "-c", 'exec redis-server --requirepass "$$LAB_PASSWORD" --maxmemory 64mb']
+    environment:
+      LAB_PASSWORD: ${LAB_PASSWORD}
+    networks: [lab]
+
+  lab-minio:
+    <<: *restart
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: morche
+      MINIO_ROOT_PASSWORD: ${LAB_PASSWORD}
+    networks: [lab]
+    mem_limit: 384m
+
+networks:
+  edge: {}
+  core: { internal: true }
+  lab: { internal: true }
+
+volumes:
+  pgdata:
+  caddydata:

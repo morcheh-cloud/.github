@@ -1,0 +1,12 @@
+[Unit]
+Description=Demo: load images and start the shop project
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/demo-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# The demo's compose project on docker-1. Images come from the ones baked into
+# the lab image: there's no registry to pull from.
+services:
+  web:
+    image: nginx:1.29-alpine
+    ports: ["8080:80"]
+    restart: unless-stopped
+  whoami:
+    image: traefik/whoami:v1.11
+    restart: unless-stopped
+  cache:
+    image: redis:8-alpine
+    restart: unless-stopped
+  adminer:
+    image: adminer:5
+    ports: ["8081:8080"]
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+# Gentle, changing load so the demo's charts have something to show: a few
+# minutes busier, a few minutes quiet, never much.
+import os, random, time
+
+hog = []
+while True:
+    busy = random.uniform(0.05, 0.35)
+    size = random.randint(20, 160)
+    hog = [bytearray(1024 * 1024) for _ in range(size)]
+    end = time.time() + random.randint(60, 300)
+    while time.time() < end:
+        t = time.time()
+        while time.time() - t < busy:
+            pass
+        time.sleep(1 - busy)
+    hog = []
