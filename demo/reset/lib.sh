@@ -46,20 +46,21 @@ wait_backend() {
 # api METHOD PATH [JSON] — as the admin, failing loudly.
 api() {
   local method=$1 path=$2 body=${3:-}
-  # The session cookie is Secure (the panel is served over https), and curl
-  # won't send that back to plain http://backend: pass the jar's cookies
-  # as a header instead.
-  local cookies=""
-  [ -f "$JAR" ] && cookies=$(awk -F'\t' 'NF==7 { sub(/^#HttpOnly_/, "", $1); printf "%s=%s; ", $6, $7 }' "$JAR")
-  local args=(-sS -c "$JAR" -X "$method" -H 'Content-Type: application/json'
+  # The session cookie is Secure (the panel is served over https). curl
+  # neither keeps nor sends that over plain http://backend, so read it from
+  # Set-Cookie and send it back as a header.
+  local args=(-sS -D /tmp/headers -X "$method" -H 'Content-Type: application/json'
     -w '\n%{http_code}')
-  [ -n "$cookies" ] && args+=(-H "Cookie: $cookies")
+  [ -s "$JAR" ] && args+=(-H "Cookie: $(cat "$JAR")")
   [ -n "${WS:-}" ] && args+=(-H "X-Workspace-Id: $WS")
   [ -n "$body" ] && args+=(--data "$body")
   local out code
   out=$(curl "${args[@]}" "$API$path")
   code=${out##*$'\n'}
   out=${out%$'\n'*}
+  local set
+  set=$(sed -n 's/^[Ss]et-[Cc]ookie: *\([^;]*\).*/\1/p' /tmp/headers | tr -d '\r' | paste -sd ';' -)
+  [ -n "$set" ] && printf '%s' "$set" > "$JAR"
   if [ "$code" -ge 300 ]; then
     log "$method $path -> $code: $out" >&2
     return 1
