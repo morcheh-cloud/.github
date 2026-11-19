@@ -2,13 +2,11 @@
 # Shared bits for the demo's seed and reset scripts.
 set -euo pipefail
 
-: "${PGPASSWORD:?}" "${DEMO_DIR:?}" "${COMPOSE_PROJECT_NAME:?}"
+: "${PGPASSWORD:?}" "${LAB_PASSWORD:?}"
 export PGHOST=postgres PGUSER=morche
-# compose.yml reads ${PWD}: run from the same folder as on the host.
-cd "$DEMO_DIR"
+BACKEND=${BACKEND_CONTAINER:-morche-demo-backend}
 API=${API:-http://backend:8080}
 JAR=/tmp/admin.cookies
-LAB_SERVICES=(lab-web-1 lab-web-2 lab-docker-1 lab-postgres lab-mariadb lab-redis lab-minio)
 
 # History the charts draw from. It survives resets (the servers keep their ids
 # from the snapshot), so the demo's graphs fill up over the days it runs.
@@ -19,9 +17,11 @@ HISTORY_TABLES=(server_samples server_check_buckets storage_checks
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
-dc() {
-  docker compose --project-directory "$DEMO_DIR" -f "$DEMO_DIR/compose.yml" "$@"
-}
+# The lab's own compose project, baked into this image.
+lab() { docker compose -f /etc/morche-demo/lab.yml "$@"; }
+
+backend_stop() { docker stop -t 20 "$BACKEND" >/dev/null; }
+backend_start() { docker start "$BACKEND" >/dev/null; }
 
 psql_q() { psql -v ON_ERROR_STOP=1 -qAt "$@"; }
 

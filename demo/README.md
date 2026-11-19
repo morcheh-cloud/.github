@@ -13,11 +13,11 @@ address signs the visitor in at once.
 
 | Service | Role |
 |---|---|
-| `caddy` | HTTPS for the panel (`DEMO_DOMAIN`) and its API (`DEMO_API_DOMAIN`) |
+| `gateway` | The way in from your reverse proxy: panel on `:3200`, API on `:8080` |
 | `frontend`, `backend` | Morche, the backend with `DEMO_MODE=true` |
 | `postgres`, `redis` | Morche's own data |
-| `reset` | Seeds the demo on first start, then resets it on the clock |
-| `lab-web-1`, `lab-web-2` | Debian servers: SSH, systemd, nginx, a small `shop-api` service, fail2ban, ufw |
+| `reset` (`ghcr.io/morcheh-cloud/demo-reset`) | Seeds the demo on first start, resets it on the clock, and runs the lab below as its own compose project `morche-demo-lab` (`reset/lab.yml`) |
+| `lab-web-1`, `lab-web-2` (`ghcr.io/morcheh-cloud/demo-lab`) | Debian servers: SSH, systemd, nginx, a small `shop-api` service, fail2ban, ufw |
 | `lab-docker-1` | Debian with Docker and a compose project (`shop`), images baked in |
 | `lab-postgres`, `lab-mariadb`, `lab-redis` | Databases for the Databases section |
 | `lab-minio` | S3 storage for Storage and backups |
@@ -27,14 +27,15 @@ address signs the visitor in at once.
 - **No way out.** The backend and lab servers sit on Docker `internal`
   networks with no route to the internet. Anything a visitor points Morche
   at (a server address, a webhook, a monitor URL, a storage) can only reach
-  the lab. Only Caddy has a way out, for its certificates.
+  the lab. Only the gateway sits on your proxy's network.
 - **No way to Morche's data.** A root shell on a lab server reaches the
   other lab containers and nothing of Morche's: the database, Redis and the
   reset job are on another network.
 - **The API isn't on the lab side.** The backend joins the lab network only
   to reach the lab servers; its API listens on its core address alone. So a
   lab shell can't call it directly, or fake `X-Forwarded-For` to dodge the
-  sign-in limits. Caddy replaces any forwarded headers a visitor sends.
+  sign-in limits. The gateway passes on only the address your proxy saw
+  (`X-Real-IP`) and drops any forwarded headers a visitor sent.
 - **Morche's own Postgres and Redis.** The backend does reach them, and a
   visitor can point some connections anywhere. But checking a private
   address from Morche itself is for system admins only: monitors, direct
@@ -62,15 +63,28 @@ address signs the visitor in at once.
 - A Linux host with Docker, plus Sysbox
   ([install](https://github.com/nestybox/sysbox/blob/master/docs/user-guide/install-package.md)).
 - About 4 GB of RAM and 20 GB of disk.
-- Two DNS names pointing at the host.
+- A reverse proxy on a Docker network (`PROXY_NETWORK`, default `proxy`),
+  such as Nginx Proxy Manager, and two DNS names pointing at it.
 
 ## Run it
 
+`compose.yml` uses only prebuilt images (`.github/workflows/demo-images.yml`
+builds the two demo ones), so a stack manager such as Arcane or Portainer
+needs just that file and the values from `.env.example`. By hand:
+
 ```sh
 cp .env.example .env    # fill in the domains and every secret
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f reset   # watch the first seed (a few minutes)
 ```
+
+Then add two hosts in the reverse proxy. In Nginx Proxy Manager these are
+Proxy Hosts, each with an SSL certificate and *Force SSL*:
+
+| Domain | Forward to | Websockets |
+|---|---|---|
+| `DEMO_DOMAIN` | `http://morche-demo-gateway:3200` | on |
+| `DEMO_API_DOMAIN` | `http://morche-demo-gateway:8080` | **on** (terminals, live charts) |
 
 On first start, `reset` seeds the panel through the API: the admin, the demo
 account, servers, databases, storage, monitors, alert rules, services and
@@ -88,7 +102,10 @@ scripts. It then keeps that database as `morche_golden`. Every reset:
 `docker compose exec postgres dropdb -U morche morche_golden` and
 `docker compose restart reset`. With no snapshot, `reset` seeds again.
 Start from an empty database:
-`docker compose down -v && docker compose up -d --build`.
+`docker compose down -v && docker compose up -d`.
+
+**Remove it:** `docker compose down -v`, then
+`docker compose -p morche-demo-lab down`. The lab is a project of its own.
 
 **Sign in as admin:** on the sign-in page, press
 *Running this demo? Sign in with an account*, then use `admin` and
@@ -100,5 +117,8 @@ Start from an empty database:
   package installs, `docker pull`, git deploys and Fetch from URL. The baked-in
   images are `nginx`, `redis`, `whoami` and `adminer`. Add more in
   `lab/Dockerfile`.
+- The core network is `172.29.10.0/24`, and the backend sits at
+  `172.29.10.10`. If that subnet is taken on the host, change both in
+  `compose.yml`.
 - Charts start empty and fill up over the days the demo runs.
 - Not seeded yet: DNS (Technitium), Proxmox, cloud accounts.

@@ -2,14 +2,19 @@
 # demo" button, with throwaway lab servers to try it on. Everything goes back
 # to the seeded state every DEMO_RESET_MINUTES. See README.md.
 #
-#   cp .env.example .env    # fill it in
-#   docker compose up -d --build
+# Every image is prebuilt, so this one file is all a stack manager (Arcane,
+# Portainer…) needs, plus the values in .env.example.
+#
+# Put your reverse proxy (Nginx Proxy Manager, Traefik, Caddy…) on the
+# PROXY_NETWORK network and point it at the gateway:
+#   DEMO_DOMAIN      -> http://morche-demo-gateway:3200
+#   DEMO_API_DOMAIN  -> http://morche-demo-gateway:8080  (WebSockets on)
 #
 # Networks keep visitors in the sandbox:
-#   edge  — Caddy only; the one network with a way out (for certificates).
-#   core  — panel, backend, Postgres, Redis, the reset job. No way out.
-#   lab   — the backend and the lab servers. No way out, and no route to core,
-#           so a root shell on a lab server can't reach the database.
+#   proxy  — your proxy and the gateway only.
+#   core   — gateway, panel, backend, Postgres, Redis, the reset job. No way out.
+#   lab    — the backend and the lab servers (made by the reset job). No way
+#            out, no route to core, and the backend's API doesn't listen there.
 name: morche-demo
 
 x-restart: &restart
@@ -18,39 +23,47 @@ x-restart: &restart
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
 
-# What a lab server may use. Visitors are root in them (under Sysbox, which
-# maps that root to an unprivileged user on the host).
-x-lab: &lab
-  <<: *restart
-  build: ./lab
-  image: morche-demo-lab
-  runtime: ${LAB_RUNTIME:-sysbox-runc}
-  networks: [lab]
-  mem_limit: 768m
-  cpus: 1
-  pids_limit: 512
-  environment: &labenv
-    LAB_PASSWORD: ${LAB_PASSWORD:?set LAB_PASSWORD in .env}
-
 services:
-  caddy:
+  # The only way in from your proxy. Hands requests on and passes the
+  # visitor's address in a header the backend believes (TRUST_PROXY), after
+  # dropping any a visitor sent themselves.
+  gateway:
     <<: *restart
-    image: caddy:2.10-alpine
-    environment:
-      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env}
-      DEMO_API_DOMAIN: ${DEMO_API_DOMAIN:?set DEMO_API_DOMAIN in .env}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddydata:/data
-    ports: ["80:80", "443:443", "443:443/udp"]
-    networks: [edge, core]
+    image: nginx:1.29-alpine
+    container_name: morche-demo-gateway
+    depends_on: [backend, frontend]
+    networks: [proxy, core]
+    command:
+      - sh
+      - -c
+      - |
+        cat > /etc/nginx/conf.d/default.conf <<'EOF'
+        map $$http_upgrade $$connection_upgrade { default upgrade; "" close; }
+        # The address your proxy saw (Nginx Proxy Manager sets X-Real-IP);
+        # without one, the proxy's own.
+        map $$http_x_real_ip $$visitor { "" $$remote_addr; default $$http_x_real_ip; }
+        proxy_http_version 1.1;
+        proxy_set_header Host $$host;
+        proxy_set_header Upgrade $$http_upgrade;
+        proxy_set_header Connection $$connection_upgrade;
+        proxy_set_header X-Real-IP $$visitor;
+        proxy_set_header X-Forwarded-For $$visitor;
+        proxy_set_header True-Client-IP "";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 1h;
+        proxy_buffering off;
+        client_max_body_size 1g;
+        server { listen 3200; location / { proxy_pass http://frontend:3200; } }
+        server { listen 8080; location / { proxy_pass http://172.29.10.10:8080; } }
+        EOF
+        exec nginx -g 'daemon off;'
 
   postgres:
     <<: *restart
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: morche
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: morche
     volumes: [pgdata:/var/lib/postgresql]
     networks: [core]
@@ -65,7 +78,7 @@ services:
     image: redis:8-alpine
     command: ["sh", "-c", 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     networks: [core]
     healthcheck:
       test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping']
@@ -76,22 +89,22 @@ services:
   backend:
     <<: *restart
     image: ghcr.io/morcheh-cloud/backend:${MORCHE_VERSION:-latest}
+    container_name: morche-demo-backend
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     environment:
       APP_ENV: production
+      # The API listens on its core address only, so a lab server can't
+      # reach it (or fake X-Forwarded-For past the sign-in limits).
+      HTTP_ADDR: 172.29.10.10:8080
       DATABASE_URL: postgres://morche:${POSTGRES_PASSWORD}@postgres:5432/morche?sslmode=disable
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY in .env}
-      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env}
-      PANEL_URL: https://${DEMO_DOMAIN}
+      SECRETS_KEY: ${SECRETS_KEY:?set SECRETS_KEY}
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN}
+      PANEL_URL: https://${DEMO_DOMAIN:?set DEMO_DOMAIN}
       CORS_ALLOWED_ORIGINS: https://${DEMO_DOMAIN}
-      # Believe Caddy's X-Forwarded-For (it replaces whatever a visitor
-      # sends). Safe only because the API listens on core alone: a lab server
-      # can't reach it to send its own.
       TRUST_PROXY: "true"
-      HTTP_ADDR: 172.29.10.10:8080
       DEMO_MODE: "true"
       DEMO_USER: demo
       DEMO_RESET_INTERVAL: ${DEMO_RESET_MINUTES:-60}m
@@ -111,94 +124,40 @@ services:
     image: ghcr.io/morcheh-cloud/frontend:${MORCHE_VERSION:-latest}
     depends_on: [backend]
     environment:
-      API_URL: https://${DEMO_API_DOMAIN}
+      API_URL: https://${DEMO_API_DOMAIN:?set DEMO_API_DOMAIN}
     networks: [core]
 
-  # Seeds the demo on its first start, then resets it on the clock. It drives
-  # Docker to stop the backend and rebuild the lab, so it holds the socket:
-  # it sits on core only, out of the lab's reach.
+  # Seeds the demo on its first start, then resets it on the clock. It
+  # starts and rebuilds the lab and stops the backend during a reset, so it
+  # holds the Docker socket: it sits on core only, out of the lab's reach.
   reset:
     <<: *restart
-    build: ./reset
+    image: ghcr.io/morcheh-cloud/demo-reset:${DEMO_VERSION:-latest}
     depends_on: [backend]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       SETUP_TOKEN: ${SETUP_TOKEN}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
-      LAB_PASSWORD: ${LAB_PASSWORD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD}
+      LAB_PASSWORD: ${LAB_PASSWORD:?set LAB_PASSWORD}
+      LAB_IMAGE: ghcr.io/morcheh-cloud/demo-lab:${DEMO_VERSION:-latest}
+      LAB_RUNTIME: ${LAB_RUNTIME:-sysbox-runc}
       DEMO_RESET_MINUTES: ${DEMO_RESET_MINUTES:-60}
-      COMPOSE_PROJECT_NAME: morche-demo
-      DEMO_DIR: ${PWD}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # The same path as on the host, so compose finds this file and .env.
-      - ${PWD}:${PWD}:ro
     networks: [core]
 
-  # --- The lab: what visitors manage ---
-
-  lab-web-1:
-    <<: *lab
-    hostname: web-1
-    environment: { <<: *labenv, LAB_ROLE: web }
-
-  lab-web-2:
-    <<: *lab
-    hostname: web-2
-    environment: { <<: *labenv, LAB_ROLE: web }
-
-  lab-docker-1:
-    <<: *lab
-    hostname: docker-1
-    mem_limit: 1536m
-    environment: { <<: *labenv, LAB_ROLE: docker }
-
-  lab-postgres:
-    <<: *restart
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_USER: shop
-      POSTGRES_PASSWORD: ${LAB_PASSWORD}
-      POSTGRES_DB: shop
-    networks: [lab]
-    mem_limit: 256m
-
-  lab-mariadb:
-    <<: *restart
-    image: mariadb:11.8
-    environment:
-      MARIADB_ROOT_PASSWORD: ${LAB_PASSWORD}
-      MARIADB_DATABASE: blog
-    networks: [lab]
-    mem_limit: 384m
-
-  lab-redis:
-    <<: *restart
-    image: redis:8-alpine
-    command: ["sh", "-c", 'exec redis-server --requirepass "$$LAB_PASSWORD" --maxmemory 64mb']
-    environment:
-      LAB_PASSWORD: ${LAB_PASSWORD}
-    networks: [lab]
-
-  lab-minio:
-    <<: *restart
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: ["server", "/data"]
-    environment:
-      MINIO_ROOT_USER: morche
-      MINIO_ROOT_PASSWORD: ${LAB_PASSWORD}
-    networks: [lab]
-    mem_limit: 384m
-
 networks:
-  edge: {}
+  proxy:
+    name: ${PROXY_NETWORK:-proxy}
+    external: true
   core:
     internal: true
     ipam:
       config: [{ subnet: 172.29.10.0/24 }]
-  lab: { internal: true }
+  lab:
+    name: morche-demo-lab
+    internal: true
 
 volumes:
   pgdata:
-  caddydata:

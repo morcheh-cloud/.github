@@ -8,7 +8,7 @@ dump_args=()
 for t in "${HISTORY_TABLES[@]}"; do dump_args+=(-t "public.$t"); done
 pg_dump -d morche --data-only --no-owner "${dump_args[@]}" > /tmp/history.sql
 
-dc stop backend
+backend_stop
 psql_q -d postgres -c "DROP DATABASE morche WITH (FORCE)"
 psql_q -d postgres -c "CREATE DATABASE morche TEMPLATE morche_golden"
 
@@ -59,6 +59,6 @@ rm -f /tmp/history.sql
 redis-cli -h redis -a "$REDIS_PASSWORD" --no-auth-warning FLUSHALL >/dev/null
 
 log "reset: rebuilding lab servers"
-dc up -d --force-recreate --no-deps "${LAB_SERVICES[@]}"
-dc start backend
+lab up -d --force-recreate --remove-orphans
+backend_start
 log "reset done"

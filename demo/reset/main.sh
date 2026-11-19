@@ -5,6 +5,9 @@ source "$(dirname "$0")/lib.sh"
 
 STEP=$(( ${DEMO_RESET_MINUTES:-60} * 60 ))
 
+log "lab: starting"
+lab up -d --remove-orphans
+
 if [ "$(psql_q -d postgres -c "SELECT 1 FROM pg_database WHERE datname='morche_golden'")" != 1 ]; then
   log "no snapshot yet: seeding"
   wait_backend
