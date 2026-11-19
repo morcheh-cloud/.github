@@ -12,9 +12,10 @@ LAB_SERVICES=(lab-web-1 lab-web-2 lab-docker-1 lab-postgres lab-mariadb lab-redi
 
 # History the charts draw from. It survives resets (the servers keep their ids
 # from the snapshot), so the demo's graphs fill up over the days it runs.
-HISTORY_TABLES=(server_samples server_check_buckets server_status_changes
-  storage_checks monitor_checks monitor_days monitor_events monitor_incidents
-  database_samples database_events docker_project_stats alert_events)
+# Numbers only: event, incident and status-change tables hold text visitors
+# can shape (names, messages), so those go back to the snapshot.
+HISTORY_TABLES=(server_samples server_check_buckets storage_checks
+  monitor_checks monitor_days database_samples docker_project_stats)
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 

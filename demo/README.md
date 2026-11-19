@@ -28,9 +28,19 @@ address signs the visitor in at once.
   networks with no route to the internet. Anything a visitor points Morche
   at (a server address, a webhook, a monitor URL, a storage) can only reach
   the lab. Only Caddy has a way out, for its certificates.
-- **No way to Morche's data.** A root shell on a lab server can reach the
-  backend's lab-side port and nothing else. The database and the reset job
-  are on another network.
+- **No way to Morche's data.** A root shell on a lab server reaches the
+  other lab containers and nothing of Morche's: the database, Redis and the
+  reset job are on another network.
+- **The API isn't on the lab side.** The backend joins the lab network only
+  to reach the lab servers; its API listens on its core address alone. So a
+  lab shell can't call it directly, or fake `X-Forwarded-For` to dodge the
+  sign-in limits. Caddy replaces any forwarded headers a visitor sends.
+- **Morche's own Postgres and Redis.** The backend does reach them, and a
+  visitor can point some connections anywhere. But checking a private
+  address from Morche itself is for system admins only: monitors, direct
+  databases, webhooks, DNS. What's left speaks the wrong protocol to
+  Postgres and Redis and can't sign in to either, since both have long
+  random passwords.
 - **Root without the host's root.** The lab servers run under
   [Sysbox](https://github.com/nestybox/sysbox). Visitors get root and Docker
   in them, but on the host they are an unprivileged user. Each lab server is
