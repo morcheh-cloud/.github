@@ -11,6 +11,17 @@ lab up -d --remove-orphans || log "lab didn't fully start; seeding anyway"
 if [ "$(psql_q -d postgres -c "SELECT 1 FROM pg_database WHERE datname='morche_golden'")" != 1 ]; then
   log "no snapshot yet: seeding"
   wait_backend
+  # A seed cut short (or someone setting the panel up by hand) leaves rows
+  # behind: start from an empty database so the seed runs whole.
+  if [ "$(psql_q -d morche -c "SELECT count(*) FROM users")" != 0 ]; then
+    log "the database isn't empty: wiping it first"
+    backend_stop
+    psql_q -d postgres -c "DROP DATABASE morche WITH (FORCE)"
+    psql_q -d postgres -c "CREATE DATABASE morche"
+    backend_start
+    sleep 3
+    wait_backend
+  fi
   seed.sh
   log "letting the first checks run"
   sleep "${SEED_SETTLE_SECONDS:-120}"

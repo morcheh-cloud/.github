@@ -46,8 +46,14 @@ wait_backend() {
 # api METHOD PATH [JSON] — as the admin, failing loudly.
 api() {
   local method=$1 path=$2 body=${3:-}
-  local args=(-sS -b "$JAR" -c "$JAR" -X "$method" -H 'Content-Type: application/json'
+  # The session cookie is Secure (the panel is served over https), and curl
+  # won't send that back to plain http://backend: pass the jar's cookies
+  # as a header instead.
+  local cookies=""
+  [ -f "$JAR" ] && cookies=$(awk -F'\t' 'NF==7 { sub(/^#HttpOnly_/, "", $1); printf "%s=%s; ", $6, $7 }' "$JAR")
+  local args=(-sS -c "$JAR" -X "$method" -H 'Content-Type: application/json'
     -w '\n%{http_code}')
+  [ -n "$cookies" ] && args+=(-H "Cookie: $cookies")
   [ -n "${WS:-}" ] && args+=(-H "X-Workspace-Id: $WS")
   [ -n "$body" ] && args+=(--data "$body")
   local out code
